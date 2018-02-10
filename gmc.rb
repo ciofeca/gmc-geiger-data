@@ -286,7 +286,7 @@ set label    \"#{from.strftime 'from %Y-%m-%d %H:%M:%S'}\"         at '#{db.firs
 set label    \"#{to.strftime 'to   %Y-%m-%d %H:%M:%S'}\"           at '#{db.first.first.strftime '%Y%m%d.%H%M%S:'}', 22.4
 set label    \"#{db.size} reads, #{total} clicks, highest: #{max}\" at '#{db.first.first.strftime '%Y%m%d.%H%M%S:'}', 21.7
 set grid
-plot '-' using 1:2 title 'CPM' with impulse"
+plot '-' using 1:2 title 'CPS (clicks per second)' with impulse"
 
 db.each do |elem|
   fp.puts "#{elem.first.strftime '%Y%m%d.%H%M%S '} #{elem.last}"
