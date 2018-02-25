@@ -8,7 +8,12 @@ TIMEOUT=0.3                             # short timeout for a read or write comp
 MEMSIZE=65536                           # GMC 300E+ only has 64k internal buffer (~1017 minutes max logging)
 EXTRAPAGE=1376                          # unmapped bytes at the end
 
+XSIZE=1600                              # x/y sizes in pixels of the output image
+YSIZE=900
+HIGHCPM=120                             # standard output image height
+
 OUTPUT='/tmp/gmc.png'                   # output graph via gnuplot, saved as png
+OUTEXT='/tmp/gmc.dat'                   # output data as tab-separated records
 OUTRAW=''                               # raw dump output file, empty string for no output
 
 DEBUG=false
@@ -235,6 +240,18 @@ if db.size == 0
   exit 0
 end
 
+# add the CPM field for the last 60 seconds
+#
+maxcpm, dat = 0, []
+db.each_with_index do |rec, i|
+  cpm = 0
+  while i >= 0 && db[i].first+60 > rec.first
+    cpm += db[i].last
+    i -= 1
+  end
+  dat += [ [ rec, cpm ].flatten ]
+  maxcpm = cpm  if maxcpm < cpm
+end
 
 # --- output some statistics --------------------------------------------------
 
@@ -260,7 +277,7 @@ db.each do |elem|
   info "!--highest: #{elem.first}: #{cps}"
 end
 debug "!--#{total} total clicks"
-
+info "!--max cpm: #{maxcpm}"
 
 # --- dump --------------------------------------------------------------------
 
@@ -268,28 +285,32 @@ if OUTRAW != ''
   File.open(OUTRAW, 'w').print buf      # save a copy of the 64k binary buffer
 end
 
-#db.each do |elem|                      # dump a readable text
-#  puts "#{elem.first.strftime '%Y%m%d.%H%M%S: '} #{elem.last}"
-#end
+debug "!--data:    #{OUTEXT}"
+fp = open OUTEXT, 'w'
+dat.each do |elem|
+  fp.puts "#{elem.first.strftime '%Y%m%d.%H%M%S '} #{elem[1]} #{elem.last}"
+end
+fp.close
 
-debug "!--output:  #{OUTPUT}"
+high = HIGHCPM
+high = maxcpm*1.05  if high < maxcpm
+
 fp = IO.popen 'gnuplot', 'w'            # dump to a gnuplot image
 fp.puts "
 set output   '#{OUTPUT}'
-set terminal png large size 1280,720
+set terminal png large size #{XSIZE},#{YSIZE}
 set xdata    time
 set timefmt  '%Y%m%d.%H%M%S:'
 set format x '%H:%M'
 set yrange   [-0.5 : 24]
+set y2range  [-19 : #{high}]
+set y2tics
 set encoding utf8
 set label    \"#{from.strftime 'from %Y-%m-%d %H:%M:%S'}\"         at '#{db.first.first.strftime '%Y%m%d.%H%M%S:'}', 23.1
 set label    \"#{to.strftime 'to   %Y-%m-%d %H:%M:%S'}\"           at '#{db.first.first.strftime '%Y%m%d.%H%M%S:'}', 22.4
 set label    \"#{db.size} reads, #{total} clicks, highest: #{max}\" at '#{db.first.first.strftime '%Y%m%d.%H%M%S:'}', 21.7
 set grid
-plot '-' using 1:2 title 'CPS (clicks per second)' with impulse"
-
-db.each do |elem|
-  fp.puts "#{elem.first.strftime '%Y%m%d.%H%M%S '} #{elem.last}"
-end
-fp.puts "eof"
-
+plot '#{OUTEXT}' using 1:2 title 'CPS (clicks per second)' with impulse,         \\
+     ''          using 1:3 title 'CPM (clicks per minute)' with lines axes x1y2, \\
+     50                    title '0.33 uSv/h'              with lines axes x1y2, \\
+     100                   title '0.65 uSv/h'              with lines axes x1y2"
